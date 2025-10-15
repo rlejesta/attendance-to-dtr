@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>ExcelJS Merge Example</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Time Keeping Record</h1>
+  <input type="file" id="excelFile" accept=".xlsx,.xls" />
+  <br /><br />
+  <div id="pindutan" class="pindutan" style="display:none;">
+    <h3>Select Names to Include</h3>
+    <div class="actions">
+      <button onclick="selectAll(true)">Select All</button>
+      <button onclick="selectAll(false)">Deselect All</button>
+      <button onclick="sortNames()">Sort A-Z</button>
+    </div>
+  </div> 
+  <div id="cutOffDisplay">
+    Cut Off: <span id="cutOffValue"></span>
+  </div>
+  <div id="nameList"></div>
+  <br/>
+  <button onclick="downloadExcel()" disabled id="downloadBtn">Download Excel</button>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
+  <script>
+    let data = []; // global data storage (each row is an array)
+    let selectedNames = new Set();
+    let cutOffPeriod = ""; // store cut-off period for reuse in Excel sheets
+
+    // Function to extract cut off dates from filename string
+    function extractCutOffFromFileName(filename) {
+      const regex = /(\d{2}-\d{2}-\d{4})_TO_(\d{2}-\d{2}-\d{4})/;
+      const match = filename.match(regex);
+      if (!match) return "";
+
+      const [_, startDateStr, endDateStr] = match;
+
+      const parseDate = (str) => {
+        const [mm, dd, yyyy] = str.split('-');
+        return new Date(`${yyyy}-${mm}-${dd}`);
+      };
+
+      const options = { year: 'numeric', month: 'long', day: 'numeric' };
+      const startDate = parseDate(startDateStr);
+      const endDate = parseDate(endDateStr);
+
+      return `${startDate.toLocaleDateString(undefined, options)} to ${endDate.toLocaleDateString(undefined, options)}`;
+    }
+
+    document.getElementById('excelFile').addEventListener('change', async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      // Extract and display cut off period from filename
+      cutOffPeriod = extractCutOffFromFileName(file.name);
+      document.getElementById('cutOffValue').textContent = cutOffPeriod;
+
+      const arrayBuffer = await file.arrayBuffer();
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(arrayBuffer);
+
+      // Assuming data is in first worksheet and starts on row 2 (below headers)
+      const worksheet = workbook.worksheets[0];
+
+      data = [];
+      selectedNames.clear();
+      const uniqueNames = new Set();
+      const nameListContainer = document.getElementById('nameList');
+      nameListContainer.innerHTML = '';
+
+      worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+        if (rowNumber === 1) return; // Skip header row
+
+        const rowValues = row.values; // row.values is 1-indexed
+        const filteredRow = [
+          rowValues[1] || "",  // Employee ID
+          rowValues[2] || "",  // First Name
+          rowValues[3] || "",  // Last Name
+          rowValues[4] || "",  // Date In
+          rowValues[5] || "",  // Time In
+          rowValues[6] || "", // Date Out (assuming column L)
+          rowValues[7] || ""  // Time Out (assuming column M)
+        ];
+        data.push(filteredRow);
+
+        const fullName = `${filteredRow[1]} ${filteredRow[2]}`.trim(); // FirstName LastName
+
+        // Add checkbox only if fullName not already added and name is not empty
+        if (fullName && !uniqueNames.has(fullName)) {
+          uniqueNames.add(fullName);
+          selectedNames.add(fullName);
+
+          const checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.id = `chk_${fullName.replace(/\s/g, '_')}`;
+          checkbox.value = fullName;
+          checkbox.checked = true;
+          checkbox.onchange = (e) => {
+            if (e.target.checked) selectedNames.add(e.target.value);
+            else selectedNames.delete(e.target.value);
+          };
+
+          const label = document.createElement('label');
+          label.htmlFor = checkbox.id;
+          label.textContent = fullName;
+
+          const div = document.createElement('div');
+          div.appendChild(checkbox);
+          div.appendChild(label);
+
+          nameListContainer.appendChild(div);
+        }
+      });
+
+      document.getElementById('pindutan').style.display = 'block';
+      document.getElementById('downloadBtn').disabled = false;
+    });
+
+    function selectAll(checked) {
+      const checkboxes = document.querySelectorAll('#nameList input[type="checkbox"]');
+      checkboxes.forEach(chk => {
+        chk.checked = checked;
+        if (checked) selectedNames.add(chk.value);
+        else selectedNames.delete(chk.value);
+      });
+    }
+
+    function sortNames() {
+      const container = document.getElementById('nameList');
+      const items = Array.from(container.children);
+      items.sort((a, b) => {
+        const nameA = a.querySelector('label').textContent.toLowerCase();
+        const nameB = b.querySelector('label').textContent.toLowerCase();
+        return nameA.localeCompare(nameB);
+      });
+      container.innerHTML = '';
+      items.forEach(item => container.appendChild(item));
+    }
+
+    async function downloadExcel() {
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet("Time Keeping", {
+        pageSetup: { orientation: 'landscape' }
+      });
+      worksheet.pageSetup = {
+        orientation: 'landscape',
+        paperSize: 9, // A4
+        fitToPage: true,
+        fitToWidth: 1,
+        fitToHeight: 0,
+        margins: {
+          left: 0.25, right: 0.25,
+          top: 0.75, bottom: 0.75,
+          header: 0.3, footer: 0.3
+        }
+      };
+
+      worksheet.columns = [
+        { key: 'col1', width: 12.29 },
+        { key: 'col2', width: 17 },
+        { key: 'col3', width: 14.42 },
+        { key: 'col4', width: 15.57 },
+        { key: 'col5', width: 12.71 },
+        { key: 'col6', width: 17 },
+        { key: 'col7', width: 14 },
+        { key: 'col8', width: 25.28 }
+      ];
+
+      // Start row index
+      let currentRow = 1;
+
+      // Load the original Excel again to get the styles
+      const fileInput = document.getElementById('excelFile');
+      const file = fileInput.files[0];
+      const arrayBuffer = await file.arrayBuffer();
+      const originalWorkbook = new ExcelJS.Workbook();
+      await originalWorkbook.xlsx.load(arrayBuffer);
+      const originalSheet = originalWorkbook.worksheets[0];
+
+      for (const name of Array.from(selectedNames)) {
+        // Header
+        worksheet.mergeCells(`A${currentRow}:H${currentRow}`);
+        const headerCell = worksheet.getCell(`A${currentRow}`);
+        headerCell.value = "DAILY TIME RECORD";
+        headerCell.alignment = { horizontal: 'center', vertical: 'middle' };
+        headerCell.font = { name: "Arial", size: 16 };
+        worksheet.getRow(currentRow).height = 30;
+        currentRow++;
+      
+        // Subheader with dynamic cut off
+        worksheet.mergeCells(`A${currentRow}:H${currentRow}`);
+        const subHeader = worksheet.getCell(`B${currentRow}`);
+        subHeader.value = cutOffPeriod ? `For the Period ${cutOffPeriod}` : "For the Period ___ to ___";
+        subHeader.alignment = { horizontal: 'center', vertical: 'middle' };
+        subHeader.font = { name: "Arial", size: 14 };
+        worksheet.getRow(currentRow).height = 25;
+        currentRow++;
+      
+        // Table header
+        const tableHeaderRow = worksheet.addRow([
+          "Employee ID", "First Name", "Last Name",
+          "Date In", "Time In", "Date Out", "Time Out", "Remarks"
+        ]);
+        tableHeaderRow.font = { name: "Arial", size: 9, bold: true };
+        tableHeaderRow.alignment = { horizontal: 'center' };
+        tableHeaderRow.eachCell((cell) => {
+          cell.border = {
+            top: { style: 'thin' },
+            left: { style: 'thin' },
+            bottom: { style: 'thin' },
+            right: { style: 'thin' }
+          };
+        });
+        currentRow++;
+      
+        // Employee rows
+        data.forEach((row, rowIndex) => {
+          const fullName = `${row[1]} ${row[2]}`.trim();
+          if (fullName === name) {
+            const originalRow = originalSheet.getRow(rowIndex + 2);
+            const addedRow = worksheet.addRow(row);
+      
+            for (let colNumber = 1; colNumber <= 8; colNumber++) {
+              const origCell = originalRow.getCell(colNumber);
+              const newCell = addedRow.getCell(colNumber);
+      
+              newCell.style = { ...origCell.style };
+              if (origCell.numFmt) newCell.numFmt = origCell.numFmt;
+              if (origCell.value instanceof Date) newCell.value = origCell.value;
+      
+              newCell.border = {
+                top: { style: 'thin' },
+                left: { style: 'thin' },
+                bottom: { style: 'thin' },
+                right: { style: 'thin' }
+              };
+            }
+            currentRow++;
+          }
+        });
+      
+        // Footer spacing
+        worksheet.addRow([]);
+        worksheet.addRow([]);
+        worksheet.addRow([]);
+        currentRow += 3;
+      
+        const fullNameRow = worksheet.addRow([name.toUpperCase(), "", "", "", "", "", "", ""]);
+        worksheet.mergeCells(`A${fullNameRow.number}:B${fullNameRow.number}`);
+        fullNameRow.getCell(1).alignment = { horizontal: 'center' };
+        fullNameRow.font = { name: "Arial", size: 10, bold: true };
+      
+        const footerLabelRow = worksheet.addRow([
+          "Signature Over Printed Name", "", "DEPARTMENT HEAD", "", "PROJ SUPERVISOR", "", "Date Submitted", ""
+        ]);
+        worksheet.mergeCells(`A${footerLabelRow.number}:B${footerLabelRow.number}`);
+        worksheet.mergeCells(`C${footerLabelRow.number}:D${footerLabelRow.number}`);
+        worksheet.mergeCells(`E${footerLabelRow.number}:F${footerLabelRow.number}`);
+        worksheet.mergeCells(`G${footerLabelRow.number}:H${footerLabelRow.number}`);
+      
+        footerLabelRow.getCell(1).alignment = { horizontal: 'center' };
+        footerLabelRow.getCell(3).alignment = { horizontal: 'center' };
+        footerLabelRow.getCell(5).alignment = { horizontal: 'center' };
+        footerLabelRow.getCell(7).alignment = { horizontal: 'center' };
+        footerLabelRow.font = { name: "Arial", size: 10 };
+        currentRow += 2;
+
+
+        // Add empty spacing + page break
+        const emptyRow = worksheet.addRow(["", "", "", "", "", "", "", ""]);
+        worksheet.mergeCells(`A${emptyRow.number}:H${emptyRow.number}`);
+        currentRow ++;
+        worksheet.getRow(emptyRow.number).addPageBreak();
+      }
+      
+
+      // Download
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `TimeKeeping_${cutOffPeriod}_Record.xlsx`;
+      link.click();
+    }
+        
+  </script>
+</body>
+</html>
